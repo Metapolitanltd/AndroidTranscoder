@@ -99,9 +99,17 @@ internal class Timer(
         override fun interpolate(type: TrackType, time: Long): Long {
             if (inputBase == Long.MIN_VALUE) inputBase = time
             outputLast = outputBase + (time - inputBase)
-            return user.interpolate(type, outputLast).also {
-                check(it > interpolatedLast) { "Timestamps must be monotonically increasing: $it, $interpolatedLast" }
-                interpolatedLast = it
+            return user.interpolate(type, outputLast).let { interpolated ->
+                val monotonic = if (interpolatedLast == Long.MIN_VALUE) {
+                    interpolated
+                } else {
+                    interpolated.coerceAtLeast(interpolatedLast + 1L)
+                }
+                if (monotonic != interpolated) {
+                    log.w("Adjusted non-monotonic timestamp from $interpolated to $monotonic (previous=$interpolatedLast)")
+                }
+                interpolatedLast = monotonic
+                monotonic
             }
         }
     }

@@ -1,12 +1,14 @@
 import io.deepmedia.tools.deployer.model.Secret
+import java.util.Properties
 
 plugins {
     id("com.android.library")
     id("io.deepmedia.tools.deployer")
+    `maven-publish`
 }
 
 android {
-    namespace = "com.otaliastudios.transcoder"
+    namespace = "com.vero.transcoder.legacy"
     compileSdk = 34
     defaultConfig.minSdk = 21
     publishing { singleVariant("release") }
@@ -14,6 +16,46 @@ android {
 
 dependencies {
     api(project(":lib"))
+}
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+
+fun localProperty(name: String): String? =
+    providers.gradleProperty(name).orNull ?: localProperties.getProperty(name)
+
+group = "com.vero"
+version = "0.11.3-vero.1"
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("veroLegacyRelease") {
+                from(components["release"])
+                groupId = "com.vero"
+                artifactId = "vero-transcoder-legacy"
+                version = "0.11.3-vero.1"
+            }
+        }
+
+        repositories {
+            val repoUrl = localProperty("VERO_MAVEN_URL")
+            if (!repoUrl.isNullOrBlank()) {
+                maven {
+                    name = "vero"
+                    url = uri(repoUrl)
+                    credentials {
+                        username = localProperty("VERO_MAVEN_USERNAME")
+                        password = localProperty("VERO_MAVEN_PASSWORD")
+                    }
+                }
+            }
+        }
+    }
 }
 
 deployer {
@@ -26,9 +68,9 @@ deployer {
     }
 
     projectInfo {
-        groupId = "com.otaliastudios"
-        artifactId = "transcoder"
-        release.version = "0.11.2" // change :lib and README
+        groupId = "com.vero"
+        artifactId = "vero-transcoder-legacy"
+        release.version = "0.11.3-vero.1" // change :lib and README
         description = "Accelerated video compression and transcoding on Android using MediaCodec APIs (no FFMPEG/LGPL licensing issues). Supports cropping to any dimension, concatenation, audio processing and much more."
         url = "https://opensource.deepmedia.io/transcoder"
         scm.fromGithub("deepmedia", "Transcoder")

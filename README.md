@@ -58,3 +58,8 @@ Transcoder.into(filePath)
          override fun onTranscodeFailed(exception: Throwable) = Unit
     }).transcode()
 ```
+
+
+publish:
+./gradlew :lib:publishVeroReleasePublicationToVeroRepository
+./gradlew :lib-legacy:publishVeroLegacyReleasePublicationToVeroRepository

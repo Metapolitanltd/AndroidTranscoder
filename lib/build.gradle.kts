@@ -1,15 +1,17 @@
 import io.deepmedia.tools.deployer.model.Secret
 import org.gradle.api.publish.maven.internal.publication.MavenPublicationInternal
+import java.util.Properties
 
 plugins {
     id("com.android.library")
     kotlin("android")
     id("io.deepmedia.tools.deployer")
+    `maven-publish`
     id("org.jetbrains.dokka") version "1.9.20"
 }
 
 android {
-    namespace = "io.deepmedia.transcoder"
+    namespace = "com.vero.transcoder"
     compileSdk = 34
     defaultConfig {
         minSdk = 21
@@ -51,6 +53,46 @@ publishing.publications.withType<MavenPublicationInternal>().configureEach {
     isAlias = name != "localReleaseComponent"
 }
 
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+
+fun localProperty(name: String): String? =
+    providers.gradleProperty(name).orNull ?: localProperties.getProperty(name)
+
+group = "com.vero"
+version = "0.11.3-vero.1"
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("veroRelease") {
+                from(components["release"])
+                groupId = "com.vero"
+                artifactId = "vero-transcoder"
+                version = "0.11.3-vero.1"
+            }
+        }
+
+        repositories {
+            val repoUrl = localProperty("VERO_MAVEN_URL")
+            if (!repoUrl.isNullOrBlank()) {
+                maven {
+                    name = "vero"
+                    url = uri(repoUrl)
+                    credentials {
+                        username = localProperty("VERO_MAVEN_USERNAME")
+                        password = localProperty("VERO_MAVEN_PASSWORD")
+                    }
+                }
+            }
+        }
+    }
+}
+
 deployer {
     content {
         component {
@@ -61,9 +103,9 @@ deployer {
     }
 
     projectInfo {
-        groupId = "io.deepmedia.community"
-        artifactId = "transcoder-android"
-        release.version = "0.11.2" // change :lib-legacy and README
+        groupId = "com.vero"
+        artifactId = "vero-transcoder"
+        release.version = "0.11.3-vero.1" // change :lib-legacy and README
         description = "Accelerated video compression and transcoding on Android using MediaCodec APIs (no FFMPEG/LGPL licensing issues). Supports cropping to any dimension, concatenation, audio processing and much more."
         url = "https://opensource.deepmedia.io/transcoder"
         scm.fromGithub("deepmedia", "Transcoder")

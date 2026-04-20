@@ -36,7 +36,7 @@ internal class DecoderTimer(
             //  with this, instead of comparing this with the PREVIOUS
             val durationUs = timeUs - lastTimeUs
             val rawDurationUs = rawTimeUs - lastRawTimeUs
-            durationUs.toDouble() / rawDurationUs
+            if (rawDurationUs <= 0L) 1.0 else durationUs.toDouble() / rawDurationUs
         }
         lastTimeUs = timeUs
         lastRawTimeUs = rawTimeUs
