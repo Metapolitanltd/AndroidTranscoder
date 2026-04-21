@@ -90,7 +90,7 @@ internal class Timer(
                 null -> 0L
                 // Not interpolated by user, so we give user interpolator a consistent stream.
                 // Add a bit of distance just so they're not identical, won't be noticeable.
-                else -> previous.outputLast + 1L
+                else -> if (previous.outputLast == Long.MAX_VALUE) Long.MAX_VALUE else previous.outputLast + 1L
             }.also {
                 log.i("Found output base timestamp: $it")
             }
