@@ -21,7 +21,7 @@ internal class MonotonicTimeInterpolator : TimeInterpolator {
         return interpolate(last[type], time).also { last[type] = it }
     }
     private fun interpolate(prev: Long, next: Long): Long {
-        if (prev == Long.MIN_VALUE) return next
+        if (prev == Long.MIN_VALUE || prev == Long.MAX_VALUE) return next
         return next.coerceAtLeast(prev + 1)
     }
 

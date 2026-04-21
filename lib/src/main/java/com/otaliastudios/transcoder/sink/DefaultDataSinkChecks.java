@@ -15,6 +15,7 @@
  */
 package com.otaliastudios.transcoder.sink;
 
+import android.media.MediaCodec;
 import android.media.MediaFormat;
 
 import com.otaliastudios.transcoder.common.TrackType;
@@ -38,6 +39,26 @@ class DefaultDataSinkChecks {
         }
     }
 
+    void checkPassThroughFormat(@NonNull TrackType type, @NonNull MediaFormat format) {
+        if (type != TrackType.VIDEO) return;
+        String mime = format.getString(MediaFormat.KEY_MIME);
+        if (MediaFormatConstants.MIMETYPE_VIDEO_AVC.equals(mime)) {
+            ensureAvcCodecSpecificData(format);
+        }
+    }
+
+    void checkVideoSample(@NonNull TrackType type,
+                          boolean firstSample,
+                          int flags,
+                          @NonNull MediaFormat format) {
+        if (type != TrackType.VIDEO || !firstSample) return;
+        String mime = format.getString(MediaFormat.KEY_MIME);
+        if (!MediaFormatConstants.MIMETYPE_VIDEO_AVC.equals(mime)) return;
+        if ((flags & MediaCodec.BUFFER_FLAG_SYNC_FRAME) == 0) {
+            throw new InvalidOutputFormatException("Cannot remux AVC video without an initial sync frame.");
+        }
+    }
+
     private void checkVideoOutputFormat(@NonNull MediaFormat format) {
         String mime = format.getString(MediaFormat.KEY_MIME);
         // Refer: http://developer.android.com/guide/appendix/media-formats.html#core
@@ -51,7 +72,7 @@ class DefaultDataSinkChecks {
         // not enforced by Android CDD. See 2016 comment by Google employee (about decoding):
         // https://github.com/google/ExoPlayer/issues/1952#issuecomment-254206222
         // So instead of throwing, we prefer to just log the profile name and let the device try to handle.
-        ByteBuffer spsBuffer = AvcCsdUtils.getSpsBuffer(format);
+        ByteBuffer spsBuffer = ensureAvcCodecSpecificData(format);
         byte profileIdc = AvcSpsUtils.getProfileIdc(spsBuffer);
         String profileName = AvcSpsUtils.getProfileName(profileIdc);
         if (profileIdc == AvcSpsUtils.PROFILE_IDC_BASELINE) {
@@ -65,6 +86,19 @@ class DefaultDataSinkChecks {
         String mime = format.getString(MediaFormat.KEY_MIME);
         if (!MediaFormatConstants.MIMETYPE_AUDIO_AAC.equals(mime)) {
             throw new InvalidOutputFormatException("Audio codecs other than AAC is not supported, actual mime type: " + mime);
+        }
+    }
+
+    @NonNull
+    private ByteBuffer ensureAvcCodecSpecificData(@NonNull MediaFormat format) {
+        if (!format.containsKey(MediaFormatConstants.KEY_AVC_SPS)
+                || !format.containsKey(MediaFormatConstants.KEY_AVC_PPS)) {
+            throw new InvalidOutputFormatException("Cannot mux AVC video without codec specific data (csd-0/csd-1).");
+        }
+        try {
+            return AvcCsdUtils.getSpsBuffer(format);
+        } catch (RuntimeException exception) {
+            throw new InvalidOutputFormatException("Invalid AVC codec specific data: " + exception.getMessage());
         }
     }
 }

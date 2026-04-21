@@ -64,6 +64,7 @@ public class DefaultDataSink implements DataSink {
     private final MutableTrackMap<TrackStatus> mStatus = mutableTrackMapOf(null);
     private final MutableTrackMap<MediaFormat> mLastFormat = mutableTrackMapOf(null);
     private final MutableTrackMap<Integer> mMuxerIndex = mutableTrackMapOf(null);
+    private final MutableTrackMap<Boolean> mFirstSampleWritten = mutableTrackMapOf(false);
     private final DefaultDataSinkChecks mMuxerChecks = new DefaultDataSinkChecks();
     private final TimeInterpolator mInterpolator = new MonotonicTimeInterpolator();
 
@@ -113,9 +114,11 @@ public class DefaultDataSink implements DataSink {
     @Override
     public void setTrackFormat(@NonNull TrackType type, @NonNull MediaFormat format) {
         LOG.i("setTrackFormat(" + type + ") format=" + format);
-        boolean shouldValidate = mStatus.get(type) == TrackStatus.COMPRESSING;
-        if (shouldValidate) {
+        TrackStatus status = mStatus.get(type);
+        if (status == TrackStatus.COMPRESSING) {
             mMuxerChecks.checkOutputFormat(type, format);
+        } else if (status == TrackStatus.PASS_THROUGH) {
+            mMuxerChecks.checkPassThroughFormat(type, format);
         }
         mLastFormat.set(type, format);
         maybeStart();
@@ -151,6 +154,12 @@ public class DefaultDataSink implements DataSink {
     @Override
     public void writeTrack(@NonNull TrackType type, @NonNull ByteBuffer byteBuffer, @NonNull MediaCodec.BufferInfo bufferInfo) {
         if (mMuxerStarted) {
+            if (bufferInfo.size > 0 && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                MediaFormat format = mLastFormat.getOrNull(type);
+                if (format != null) {
+                    mMuxerChecks.checkVideoSample(type, !mFirstSampleWritten.get(type), bufferInfo.flags, format);
+                }
+            }
             if (bufferInfo.presentationTimeUs != 0) {
                 bufferInfo.presentationTimeUs = mInterpolator.interpolate(type, bufferInfo.presentationTimeUs);
             }
@@ -164,6 +173,9 @@ public class DefaultDataSink implements DataSink {
             );
              */
             mMuxer.writeSampleData(mMuxerIndex.get(type), byteBuffer, bufferInfo);
+            if (bufferInfo.size > 0 && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                mFirstSampleWritten.set(type, true);
+            }
         } else {
             enqueue(type, byteBuffer, bufferInfo);
         }
