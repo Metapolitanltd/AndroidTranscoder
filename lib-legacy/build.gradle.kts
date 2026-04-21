@@ -1,6 +1,14 @@
 import io.deepmedia.tools.deployer.model.Secret
 import java.util.Properties
 
+val versionProperties = Properties().apply {
+    rootProject.file("version.properties").inputStream().use(::load)
+}
+
+fun versionProperty(name: String): String = requireNotNull(versionProperties.getProperty(name)) {
+    "Missing version property: $name"
+}
+
 plugins {
     id("com.android.library")
     id("io.deepmedia.tools.deployer")
@@ -8,7 +16,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vero.transcoder.legacy"
+    namespace = versionProperty("LEGACY_NAMESPACE")
     compileSdk = 34
     defaultConfig.minSdk = 21
     publishing { singleVariant("release") }
@@ -28,17 +36,17 @@ val localProperties = Properties().apply {
 fun localProperty(name: String): String? =
     providers.gradleProperty(name).orNull ?: localProperties.getProperty(name)
 
-group = "com.vero"
-version = "0.11.3-vero.1"
+group = versionProperty("GROUP")
+version = versionProperty("VERSION_NAME")
 
 afterEvaluate {
     publishing {
         publications {
             create<MavenPublication>("veroLegacyRelease") {
                 from(components["release"])
-                groupId = "com.vero"
-                artifactId = "vero-transcoder-legacy"
-                version = "0.11.3-vero.1"
+                groupId = versionProperty("GROUP")
+                artifactId = versionProperty("LEGACY_ARTIFACT_ID")
+                version = versionProperty("VERSION_NAME")
             }
         }
 
@@ -68,9 +76,9 @@ deployer {
     }
 
     projectInfo {
-        groupId = "com.vero"
-        artifactId = "vero-transcoder-legacy"
-        release.version = "0.11.3-vero.1" // change :lib and README
+        groupId = versionProperty("GROUP")
+        artifactId = versionProperty("LEGACY_ARTIFACT_ID")
+        release.version = versionProperty("VERSION_NAME") // change :lib and README
         description = "Accelerated video compression and transcoding on Android using MediaCodec APIs (no FFMPEG/LGPL licensing issues). Supports cropping to any dimension, concatenation, audio processing and much more."
         url = "https://opensource.deepmedia.io/transcoder"
         scm.fromGithub("deepmedia", "Transcoder")
