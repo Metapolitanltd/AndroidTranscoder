@@ -100,11 +100,12 @@ internal class Timer(
             if (inputBase == Long.MIN_VALUE) inputBase = time
             outputLast = outputBase + (time - inputBase)
             return user.interpolate(type, outputLast).let { interpolated ->
-                val monotonic = if (interpolatedLast == Long.MIN_VALUE) {
+                val minNext = if (interpolatedLast == Long.MIN_VALUE || interpolatedLast == Long.MAX_VALUE) {
                     interpolated
                 } else {
-                    interpolated.coerceAtLeast(interpolatedLast + 1L)
+                    interpolatedLast + 1L
                 }
+                val monotonic = interpolated.coerceAtLeast(minNext)
                 if (monotonic != interpolated) {
                     log.w("Adjusted non-monotonic timestamp from $interpolated to $monotonic (previous=$interpolatedLast)")
                 }

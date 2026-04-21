@@ -153,11 +153,13 @@ public class DefaultDataSink implements DataSink {
 
     @Override
     public void writeTrack(@NonNull TrackType type, @NonNull ByteBuffer byteBuffer, @NonNull MediaCodec.BufferInfo bufferInfo) {
-        MediaFormat format = mLastFormat.getOrNull(type);
-        if (format != null) {
-            mMuxerChecks.checkVideoSample(type, !mFirstSampleWritten.get(type), bufferInfo.flags, format);
-        }
         if (mMuxerStarted) {
+            if (bufferInfo.size > 0 && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                MediaFormat format = mLastFormat.getOrNull(type);
+                if (format != null) {
+                    mMuxerChecks.checkVideoSample(type, !mFirstSampleWritten.get(type), bufferInfo.flags, format);
+                }
+            }
             if (bufferInfo.presentationTimeUs != 0) {
                 bufferInfo.presentationTimeUs = mInterpolator.interpolate(type, bufferInfo.presentationTimeUs);
             }
@@ -171,7 +173,7 @@ public class DefaultDataSink implements DataSink {
             );
              */
             mMuxer.writeSampleData(mMuxerIndex.get(type), byteBuffer, bufferInfo);
-            if (bufferInfo.size > 0) {
+            if (bufferInfo.size > 0 && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
                 mFirstSampleWritten.set(type, true);
             }
         } else {
