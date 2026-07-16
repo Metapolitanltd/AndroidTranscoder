@@ -92,6 +92,15 @@ public class TrimDataSource extends DataSourceWrapper {
             LOG.i("canReadTrack(): extraDurationUs=" + extraDurationUs
                     + " trimStartUs=" + trimStartUs
                     + " source.seekTo(trimStartUs)=" + (extraDurationUs - trimStartUs));
+            if (trimDurationUs + extraDurationUs <= 0) {
+                // Can happen if the source seek was unreliable and its fast-forward fallback
+                // landed at a sync frame beyond the trim end. Fail clearly rather than
+                // silently producing an empty file.
+                throw new IllegalStateException("Trim start could not be reached accurately:" +
+                        " the seek landed at " + (trimStartUs - extraDurationUs) +
+                        "us which is beyond the trim end. trimStartUs=" + trimStartUs +
+                        " trimDurationUs=" + trimDurationUs);
+            }
             trimDone = true;
         }
         return super.canReadTrack(type);

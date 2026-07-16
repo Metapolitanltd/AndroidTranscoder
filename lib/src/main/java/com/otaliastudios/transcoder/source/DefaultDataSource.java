@@ -28,6 +28,12 @@ import static com.otaliastudios.transcoder.internal.utils.TrackMapKt.mutableTrac
 public abstract class DefaultDataSource implements DataSource {
 
     private final static AtomicInteger ID = new AtomicInteger(0);
+
+    // If a seek lands more than this amount before the requested position, we consider the
+    // extractor seek unreliable (e.g. mkv files with missing Cues) and fall back to a manual,
+    // demux-only fast-forward. The value should be bigger than any reasonable keyframe interval,
+    // because with a working seek the shortfall is at most one keyframe interval by design.
+    private final static long SEEK_FALLBACK_THRESHOLD_US = 30_000_000L;
     private final Logger LOG = new Logger("DefaultDataSource(" + ID.getAndIncrement() + ")");
 
     private final MutableTrackMap<MediaFormat> mFormat = mutableTrackMapOf(null);
@@ -165,13 +171,20 @@ public abstract class DefaultDataSource implements DataSource {
             LOG.v("seekTo(): unselected AUDIO, seeking to " + (mOriginUs + desiredPositionUs) + " (extractorUs=" + mExtractor.getSampleTime() + ")");
             mExtractor.seekTo(mOriginUs + desiredPositionUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
             LOG.v("seekTo(): unselected AUDIO and sought (extractorUs=" + mExtractor.getSampleTime() + ")");
+            // Capture the video position BEFORE reselecting audio: on some containers (mkv),
+            // selectTrack() changes getSampleTime() to the new track's first sample, and seeking
+            // to that would throw away the video seek and collapse the position to ~0.
+            long videoSeekUs = mExtractor.getSampleTime();
             mExtractor.selectTrack(mIndex.getAudio()); // second seek might not be needed, but should not hurt.
-            LOG.v("seekTo(): reselected AUDIO, seeking to extractorUs (extractorUs=" + mExtractor.getSampleTime() + ")");
-            mExtractor.seekTo(mExtractor.getSampleTime(), MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+            LOG.v("seekTo(): reselected AUDIO, seeking to videoUs=" + videoSeekUs + " (extractorUs=" + mExtractor.getSampleTime() + ")");
+            if (videoSeekUs >= 0) {
+                mExtractor.seekTo(videoSeekUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+            }
             LOG.v("seekTo(): seek workaround completed. (extractorUs=" + mExtractor.getSampleTime() + ")");
         } else {
             mExtractor.seekTo(mOriginUs + desiredPositionUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
         }
+        maybeFastForward(mOriginUs + desiredPositionUs, hasVideo);
         mDontRenderRangeStart = mExtractor.getSampleTime();
         mDontRenderRangeEnd = mOriginUs + desiredPositionUs;
         if (mDontRenderRangeStart > mDontRenderRangeEnd) {
@@ -187,6 +200,58 @@ public abstract class DefaultDataSource implements DataSource {
                 mDontRenderRangeEnd + " (" +
                 (mDontRenderRangeEnd - mDontRenderRangeStart) + "us)");
         return mExtractor.getSampleTime() - mOriginUs;
+    }
+
+    /**
+     * Some files can't be sought reliably by {@link MediaExtractor} - for example, mkv files
+     * with missing Cues, where any seek lands at (or near) 0. Without this check, everything
+     * between the landing point and the seek target would be decoded and dropped, so trimming
+     * the end of a long movie would take as long as transcoding the whole movie.
+     *
+     * If the seek landed too far before the target, fast-forward by advancing the extractor
+     * sample by sample: this is demux-only (no sample data is read, nothing is decoded) and
+     * orders of magnitude faster. Since we can't rewind, the video track must then start at
+     * the first sync frame at-or-after the target, so in this fallback the effective start
+     * can be later than requested by up to one keyframe interval.
+     */
+
+
+    private void maybeFastForward(long targetUs, boolean hasVideo) {
+        long landedUs = mExtractor.getSampleTime();
+        if (landedUs < 0 || targetUs - landedUs <= SEEK_FALLBACK_THRESHOLD_US) return;
+        LOG.w("maybeFastForward(): seek landed " + ((targetUs - landedUs) / 1000000) + "s before" +
+                " the target. Extractor seeking is unreliable for this file," +
+                " fast-forwarding without decoding.");
+        long startRealtimeMs = System.currentTimeMillis();
+        long lastLogUs = landedUs;
+        while (mExtractor.getSampleTime() >= 0 && mExtractor.getSampleTime() < targetUs) {
+            mExtractor.advance();
+            long sampleUs = mExtractor.getSampleTime();
+            if (sampleUs - lastLogUs >= 60_000_000L) {
+                LOG.i("maybeFastForward(): still skipping... " + (sampleUs / 1000000) + "s /"
+                        + " " + (targetUs / 1000000) + "s"
+                        + " (" + ((System.currentTimeMillis() - startRealtimeMs) / 1000) + "s elapsed)");
+                lastLogUs = sampleUs;
+            }
+        }
+        if (hasVideo) {
+            // Video decoding must start at a sync frame. We can't rewind to the previous one,
+            // so move forward to the next video sync frame, dropping other tracks' samples
+            // in between to keep audio/video aligned.
+            while (mExtractor.getSampleTime() >= 0
+                    && !(mExtractor.getSampleTrackIndex() == mIndex.getVideo()
+                        && (mExtractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_SYNC) != 0)) {
+                mExtractor.advance();
+            }
+        }
+        if (mExtractor.getSampleTime() < 0) {
+            throw new RuntimeException("Trim point could not be reached: the file can't be" +
+                    " sought (target=" + targetUs + "us) and it ended before the trim point." +
+                    " The file duration metadata may be wrong.");
+        }
+        LOG.w("maybeFastForward(): fast-forward completed in "
+                + (System.currentTimeMillis() - startRealtimeMs) + "ms, landed at "
+                + mExtractor.getSampleTime() + "us (target=" + targetUs + "us)");
     }
 
     @Override
