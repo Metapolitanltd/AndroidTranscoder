@@ -2,6 +2,7 @@ package com.otaliastudios.transcoder.internal.codec
 
 import android.media.MediaCodec.*
 import android.media.MediaFormat
+import android.os.Build
 import android.view.Surface
 import com.otaliastudios.transcoder.common.TrackType
 import com.otaliastudios.transcoder.common.trackType
@@ -52,6 +53,19 @@ internal class Decoder(
         log.i("initialize()")
         val surface = next.handleSourceFormat(format)
         surfaceRendering = surface != null
+        if (format.trackType == TrackType.AUDIO) {
+            val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            if (channels > 2) {
+                // The audio pipeline (remixer, resampler) only supports mono and stereo,
+                // so ask the decoder to downmix multichannel (e.g. 5.1) audio to stereo.
+                log.i("initialize(): requesting decoder downmix from $channels channels to 2.")
+                format.setInteger(MediaFormat.KEY_AAC_MAX_OUTPUT_CHANNEL_COUNT, 2)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S_V2) {
+                    // Codec-agnostic key (covers AC-3, E-AC-3, DTS...), API 32+.
+                    format.setInteger(MediaFormat.KEY_MAX_OUTPUT_CHANNEL_COUNT, 2)
+                }
+            }
+        }
         decoder.codec.configure(format, surface, null, 0)
         decoder.codec.start()
     }

@@ -114,8 +114,11 @@ public class DefaultAudioStrategy implements TrackStrategy {
     @Override
     public TrackStatus createOutputFormat(@NonNull List<MediaFormat> inputFormats,
                                           @NonNull MediaFormat outputFormat) {
+        int inputChannels = getInputChannelCount(inputFormats);
+        // The audio pipeline only supports mono and stereo: multichannel (e.g. 5.1) input
+        // is downmixed to stereo by the decoder, so clamp CHANNELS_AS_INPUT accordingly.
         int outputChannels = (options.targetChannels == CHANNELS_AS_INPUT)
-                ? getInputChannelCount(inputFormats)
+                ? Math.min(inputChannels, 2)
                 : options.targetChannels;
         int outputSampleRate = (options.targetSampleRate == SAMPLE_RATE_AS_INPUT)
                 ? getInputSampleRate(inputFormats)
@@ -123,6 +126,7 @@ public class DefaultAudioStrategy implements TrackStrategy {
         long outputBitRate;
         if (inputFormats.size() == 1
                 && options.targetChannels == CHANNELS_AS_INPUT
+                && outputChannels == inputChannels
                 && options.targetSampleRate == SAMPLE_RATE_AS_INPUT
                 && options.targetBitRate == BITRATE_UNKNOWN
                 && inputFormats.get(0).containsKey(MediaFormat.KEY_BIT_RATE)) {

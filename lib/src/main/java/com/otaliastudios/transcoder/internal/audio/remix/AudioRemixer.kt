@@ -23,9 +23,11 @@ internal interface AudioRemixer {
 
     companion object {
         internal operator fun get(inputChannels: Int, outputChannels: Int): AudioRemixer = when {
-            inputChannels == outputChannels -> PassThroughAudioRemixer()
+            // 5.1 surround input: reached when the decoder ignored our downmix request.
+            inputChannels == 6 && outputChannels in setOf(1, 2) -> SurroundDownMixAudioRemixer(outputChannels)
             inputChannels !in setOf(1, 2) -> error("Input channel count not supported: $inputChannels")
             outputChannels !in setOf(1, 2) -> error("Output channel count not supported: $outputChannels")
+            inputChannels == outputChannels -> PassThroughAudioRemixer()
             inputChannels < outputChannels -> UpMixAudioRemixer()
             else -> DownMixAudioRemixer()
         }

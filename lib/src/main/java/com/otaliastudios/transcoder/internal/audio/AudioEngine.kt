@@ -83,7 +83,9 @@ internal class AudioEngine(
             // See if we have enough room to process the whole input
             val processableSize = if (desiredOutSize <= outSize) inSize else {
                 val factor = desiredOutSize / inSize
-                floor(outSize / factor).toInt()
+                // Align to whole frames, otherwise the input channel order breaks
+                // at the cut point and the remainder is remixed with swapped channels.
+                floor(outSize / factor).toInt().let { it - it % rawFormat.channels }
             }
             inBuffer.limit(inBuffer.position() + processableSize)
 
